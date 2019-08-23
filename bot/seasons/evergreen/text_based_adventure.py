@@ -65,7 +65,7 @@ class TextBasedAdventure(commands.Cog):
             res = await ctx.bot.wait_for('reaction_add', timeout=30)
             if res is None:
                 break
-            if str(res[1]) != 'RetroBot':  # Example: 'MyBot#1111'
+            if str(res[1]) != 'SeasonalBotTestBot#1418':  # Example: 'MyBot#1111'
                 emoji = str(res[0].emoji)
                 await message.remove_reaction(res[0].emoji, res[1])
 
