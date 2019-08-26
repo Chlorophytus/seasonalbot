@@ -7,26 +7,36 @@ from discord.ext import commands
 log = logging.getLogger(__name__)
 
 
-def determine_hole_singularity(hmin: int, hmax: int) -> int:
-    """
-    If a hole is at an obvious singularity, pick the spot between the min and the max.
-
-    Otherwise, we pick a spot randomly.
-    """
-    if hmax - hmin > 3:
-        return random.randint(hmin + 1, hmax - 1)
-    else:
-        return hmin + 1
-
-
 class RecursiveDivider:
     """Naive implementation of an asynchronous recursive maze divider."""
 
-    def __init__(self, x: int, y: int, maze_cb):
+    class Wall:
+        """Internal type for walls in the subdivider."""
+
+        def __init__(self, horizontal: bool, length: int, right_facing: bool, position: (int, int)):
+            self.horizontal = horizontal
+            self.length = length
+            self.right_facing = right_facing
+            self.x = position[0]
+            self.y = position[1]
+
+            if self.horizontal:
+                if self.right_facing:
+                    self.hole = random.randint(self.x + 1, self.x + self.length - 1)
+                else:
+                    self.hole = random.randint(self.x - self.length + 1, self.x - 1)
+            else:
+                if self.right_facing:
+                    self.hole = random.randint(self.y + 1, self.y + self.length - 1)
+                else:
+                    self.hole = random.randint(self.y - self.length + 1, self.y - 1)
+
+    def __init__(self, x: int, y: int, recursion_limit: int, maze_cb):
         self.x = x
         self.y = y
         self.complete = False
         self.maze_callback = maze_cb
+        self.recursion = recursion_limit
 
         def determine_exteriors(wx: int, wy: int, xx: int, yy: int):
             return xx == wx or xx == 0 or yy == wy or yy == 0
@@ -39,66 +49,77 @@ class RecursiveDivider:
 
         This is an asynchronous and recursive call.
         """
-        branch_horizontal = random.getrandbits(1)
-
-        w = self.y if branch_horizontal else self.x
-        wall_at = random.randint(2, w - 2)
-        holes_at = (determine_hole_singularity(1, wall_at - 1), determine_hole_singularity(wall_at + 1, w - 1))
-
-        for i in range(self.x if branch_horizontal else self.y):
-            if branch_horizontal:
-                self.maze_data[i][wall_at] = i != holes_at[0] or i != holes_at[1]
-            else:
-                self.maze_data[wall_at][i] = i != holes_at[0] or i != holes_at[1]
-
-        if branch_horizontal:
-            await self.branch_and_divide(0, wall_at - 1, w - wall_at + 1, True)
+        horizontal = random.getrandbits(1)
+        seed_wall = None
+        if horizontal:
+            seed_wall = RecursiveDivider.Wall(True, self.x - 2, True, (1, random.randint(2, self.y - 2)))
         else:
-            await self.branch_and_divide(wall_at, 0, w - wall_at + 1, False)
+            seed_wall = RecursiveDivider.Wall(False, self.y - 2, True, (random.randint(2, self.x - 2), 1))
+        await self.branch_wall_with_hole(seed_wall)
 
-    async def branch_and_divide(self, x: int, y: int, delta: int, branch_horizontal: bool):
+    def bisect_wall(self, length: int, right_facing: bool, trunk):
         """
-        Branch, then divide a section of the maze.
+        Bisect a wall, `length` being an upper bound.
 
-        Call `start_division` instead when in a production environment.
+        :param length: How long to make this next wall?
+        :param right_facing: Does the branch wall face the right of the trunk?
+        :param trunk: Original wall to bisect.
         """
-        w = x if branch_horizontal else y
+        if trunk.horizontal:
+            if right_facing:
+                return RecursiveDivider.Wall(not trunk.horizontal, length, right_facing,
+                                             (trunk.x, trunk.y - trunk.length))
+            else:
+                return RecursiveDivider.Wall(not trunk.horizontal, length, right_facing,
+                                             (trunk.x, trunk.y))
+        else:
+            if right_facing:
+                return RecursiveDivider.Wall(not trunk.horizontal, length, right_facing,
+                                             (trunk.x - trunk.length, trunk.y))
+            else:
+                return RecursiveDivider.Wall(not trunk.horizontal, length, right_facing,
+                                             (trunk.x, trunk.y))
 
-        if w + delta - 2 < 3:
+    def draw_wall(self, trunk: Wall):
+        """Plot a wall on the maze"""
+        if trunk.horizontal:
+            if trunk.right_facing:
+                for i in range(trunk.x, trunk.x + trunk.length):
+                    self.maze_data[i][trunk.y] = i != trunk.hole
+            else:
+                for i in range(trunk.x - trunk.length, trunk.x):
+                    self.maze_data[i][trunk.y] = i != trunk.hole
+        else:
+            if trunk.right_facing:
+                for i in range(trunk.y, trunk.y + trunk.length):
+                    self.maze_data[trunk.x][i] = i != trunk.hole
+            else:
+                for i in range(trunk.y - trunk.length, trunk.y):
+                    self.maze_data[trunk.x][i] = i != trunk.hole
+
+    async def branch_wall_with_hole(self, trunk: Wall):
+        """
+        Make a wall in the grid, with a random hole, then do branching calls
+
+        :param trunk: The attributes for the wall to branch.
+        """
+        if self.recursion < 1:
             if not self.complete:
-                self.complete = True
                 self.maze_callback(self)
+                self.complete = True
             return
 
-        # Minima and maxima for the main parts of the walls
-        wall_bounds = (w + 2, w + delta - 2)
+        self.recursion -= 1
 
-        # Split.
-        wall_split_at = random.randint(wall_bounds[0] + 1, wall_bounds[1] - 1)
-        next_walls_at = (random.randint(wall_bounds[0], wall_split_at - 1), random.randint(wall_split_at + 1,
-                                                                                           wall_bounds[1]))
+        next_walls = None
+        self.draw_wall(trunk)
 
-        holes_at = (determine_hole_singularity(next_walls_at[0], wall_split_at),
-                    determine_hole_singularity(wall_split_at, next_walls_at[1]))
+        partitioning_at = random.randint(0, trunk.length - 1)
+        next_walls = (self.bisect_wall(partitioning_at, True, trunk),
+                      self.bisect_wall(partitioning_at, False, trunk))
 
-        for i in range(wall_bounds[0], wall_split_at - 1):
-            if branch_horizontal:
-                self.maze_data[i][y] = i != holes_at[0]
-            else:
-                self.maze_data[x][i] = i != holes_at[0]
-
-        for i in range(wall_split_at + 1, wall_bounds[1]):
-            if branch_horizontal:
-                self.maze_data[i][y] = i != holes_at[1]
-            else:
-                self.maze_data[x][i] = i != holes_at[1]
-
-        if branch_horizontal:
-            await self.branch_and_divide(next_walls_at[0], y, wall_split_at - next_walls_at[0], False)
-            await self.branch_and_divide(wall_split_at, y, next_walls_at[1] - wall_split_at, False)
-        else:
-            await self.branch_and_divide(x, next_walls_at[0], wall_split_at - next_walls_at[0], True)
-            await self.branch_and_divide(x, wall_split_at, next_walls_at[1] - wall_split_at, True)
+        await self.branch_wall_with_hole(next_walls[0])
+        await self.branch_wall_with_hole(next_walls[1])
 
 
 class TextBasedAdventure(commands.Cog):
