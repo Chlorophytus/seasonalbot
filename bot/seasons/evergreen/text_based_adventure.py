@@ -8,118 +8,113 @@ log = logging.getLogger(__name__)
 
 
 class RecursiveDivider:
-    """Naive implementation of an asynchronous recursive maze divider."""
+    """
+    Naive implementation of an asynchronous recursive maze divider.
+
+    FIXME: I will gradually fix the recursive maze generator over the course of the next few days.
+    """
 
     class Wall:
-        """Internal type for walls in the subdivider."""
+        """Randomly generated wall for the maze divider."""
 
-        def __init__(self, horizontal: bool, length: int, right_facing: bool, position: (int, int)):
+        def __init__(self, horizontal: bool, bounds: [(int, int)]):
+            """
+            Make a wall definition and extrapolate values for branching.
+
+            :param horizontal: True if horizontal.
+            :param bounds: Bounding box.
+                at 0: The upper left corner.
+                at 1: The lower right corner.
+            """
             self.horizontal = horizontal
-            self.length = length
-            self.right_facing = right_facing
-            self.x = position[0]
-            self.y = position[1]
+            self.bounds = bounds
 
             if self.horizontal:
-                if self.right_facing:
-                    self.hole = random.randint(self.x + 1, self.x + self.length - 1)
-                else:
-                    self.hole = random.randint(self.x - self.length + 1, self.x - 1)
+                self.start = (random.randint(self.bounds[0][0], self.bounds[1][0]), self.bounds[0][1])
+                self.end = (self.start[0], self.bounds[1][1])
+                # Horizontal, get a random X to plop a passage in
+                # Remember that walls go left-to-right.
+                # This means that we offset rightward. This is addition.
+                self.passage = random.randint(self.start[0], self.end[0])
+                # Upward is item 0, downward is item 1
+                self.partitions_at = [self.randint_excluded(self.start[0], self.end[0], self.passage) for _ in
+                                      range(2)]
+                self.next_bounds = [
+                    [self.start, (self.partitions_at[0], self.end[1])],
+                    [(self.partitions_at[1], self.end[1]), self.end]
+                ]
             else:
-                if self.right_facing:
-                    self.hole = random.randint(self.y + 1, self.y + self.length - 1)
-                else:
-                    self.hole = random.randint(self.y - self.length + 1, self.y - 1)
+                self.start = (self.bounds[0][0], random.randint(self.bounds[0][1], self.bounds[1][1]))
+                self.end = (self.bounds[1][0], self.start[1])
+                # Vertical, get a random Y coordinate.
+                # Remember that walls go up-to-down.
+                # This means that we offset downward. This is addition.
+                self.passage = random.randint(self.start[1], self.end[1])
+                # Leftward is item 0, rightward is item 1
+                self.partitions_at = [self.randint_excluded(self.start[1], self.end[1], self.passage) for _ in
+                                      range(2)]
+                self.next_bounds = [
+                    [self.start, (self.end[0], self.partitions_at[0])],
+                    [(self.end[0], self.partitions_at[1]), self.end]
+                ]
+            print(f"{self.horizontal} {self.next_bounds}")
 
-    def __init__(self, x: int, y: int, recursion_limit: int, maze_cb):
-        self.x = x
-        self.y = y
-        self.complete = False
-        self.maze_callback = maze_cb
-        self.recursion = recursion_limit
+        @staticmethod
+        def randint_excluded(a: int, b: int, exclusion: int) -> int:
+            """
+            Random integer with an exclusion. The value returned is never the exclusion.
 
-        def determine_exteriors(wx: int, wy: int, xx: int, yy: int):
-            return xx == wx or xx == 0 or yy == wy or yy == 0
+            :param a: Minimum.
+            :param b: Maximum.
+            :param exclusion: The value to not generate.
+            :return: A value either between a and `exclusion - 1` or `exclusion + 1` and b.
+            """
+            if random.getrandbits(1):
+                return random.randint(a, exclusion - 1)
+            else:
+                return random.randint(exclusion + 1, b)
 
-        self.maze_data = [[determine_exteriors(x - 1, y - 1, xx, yy) for xx in range(x)] for yy in range(y)]
+    def __init__(self, done_callback, recursion_max: int, size: (int, int)):
+        self.recursion = recursion_max
+        self.size = size
+        self.data = [[False] * (size[1])] * (size[0])
+        self.done_callback = done_callback
+        self.done = False
 
-    async def start_division(self):
-        """
-        Seed the recursive divider, bifurcating until the maze is finished.
-
-        This is an asynchronous and recursive call.
-        """
-        horizontal = random.getrandbits(1)
-        seed_wall = None
-        if horizontal:
-            seed_wall = RecursiveDivider.Wall(True, self.x - 2, True, (1, random.randint(2, self.y - 2)))
+    @staticmethod
+    def determine_orientation(dimensions: (int, int)) -> bool:
+        """Determine orientation of the wall"""
+        if dimensions[0] == dimensions[1]:
+            return random.getrandbits(1)
         else:
-            seed_wall = RecursiveDivider.Wall(False, self.y - 2, True, (random.randint(2, self.x - 2), 1))
-        await self.branch_wall_with_hole(seed_wall)
+            return dimensions[1] > dimensions[0]
 
-    def bisect_wall(self, length: int, right_facing: bool, trunk):
-        """
-        Bisect a wall, `length` being an upper bound.
+    async def start(self):
+        """Start dividing the maze."""
+        horizontal = self.determine_orientation(self.size)
+        await self.recurse(RecursiveDivider.Wall(horizontal, [
+            (0, 0),
+            self.size
+        ]))
 
-        :param length: How long to make this next wall?
-        :param right_facing: Does the branch wall face the right of the trunk?
-        :param trunk: Original wall to bisect.
-        """
-        if trunk.horizontal:
-            if right_facing:
-                return RecursiveDivider.Wall(not trunk.horizontal, length, right_facing,
-                                             (trunk.x, trunk.y - trunk.length))
-            else:
-                return RecursiveDivider.Wall(not trunk.horizontal, length, right_facing,
-                                             (trunk.x, trunk.y))
-        else:
-            if right_facing:
-                return RecursiveDivider.Wall(not trunk.horizontal, length, right_facing,
-                                             (trunk.x - trunk.length, trunk.y))
-            else:
-                return RecursiveDivider.Wall(not trunk.horizontal, length, right_facing,
-                                             (trunk.x, trunk.y))
-
-    def draw_wall(self, trunk: Wall):
-        """Plot a wall on the maze"""
-        if trunk.horizontal:
-            if trunk.right_facing:
-                for i in range(trunk.x, trunk.x + trunk.length):
-                    self.maze_data[i][trunk.y] = i != trunk.hole
-            else:
-                for i in range(trunk.x - trunk.length, trunk.x):
-                    self.maze_data[i][trunk.y] = i != trunk.hole
-        else:
-            if trunk.right_facing:
-                for i in range(trunk.y, trunk.y + trunk.length):
-                    self.maze_data[trunk.x][i] = i != trunk.hole
-            else:
-                for i in range(trunk.y - trunk.length, trunk.y):
-                    self.maze_data[trunk.x][i] = i != trunk.hole
-
-    async def branch_wall_with_hole(self, trunk: Wall):
-        """
-        Make a wall in the grid, with a random hole, then do branching calls
-
-        :param trunk: The attributes for the wall to branch.
-        """
+    async def recurse(self, parent: Wall):
+        """Do not call this method. Recurses steps through the maze."""
         if self.recursion < 1:
-            if not self.complete:
-                self.maze_callback(self)
-                self.complete = True
+            if not self.done:
+                self.done = True
+                self.done_callback(self)
             return
-
         self.recursion -= 1
 
-        next_walls = None
-        self.draw_wall(trunk)
+        if parent.horizontal:
+            for i in range(parent.start[0], parent.end[0]):
+                print(f"{parent.start} {i}")
+        else:
+            for i in range(parent.start[1], parent.end[1]):
+                print(f"{parent.start} {i}")
 
-        partitioning_at = random.randint(0, trunk.length - 1)
-        next_walls = (self.bisect_wall(partitioning_at, True, trunk),
-                      self.bisect_wall(partitioning_at, False, trunk))
-
-        await self.branch_wall_with_hole(next_walls[0])
-        await self.branch_wall_with_hole(next_walls[1])
+        await self.recurse(RecursiveDivider.Wall(not parent.horizontal, parent.next_bounds[0]))
+        await self.recurse(RecursiveDivider.Wall(not parent.horizontal, parent.next_bounds[1]))
 
 
 class TextBasedAdventure(commands.Cog):
