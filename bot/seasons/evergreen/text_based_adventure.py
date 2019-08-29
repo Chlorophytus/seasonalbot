@@ -47,10 +47,10 @@ class RecursiveDivider:
             """Calculate a passage, able to be placed into the wall."""
             return RecursiveDivider.random_position(self.segment_start, self.segment_end)
 
-    def __init__(self, done_callback, recursion_max: int, size: (int, int)):
+    def __init__(self, done_callback, recursion_max: int, size: int):
         self.recursion = recursion_max
         self.size = size
-        self.data = [[False] * size[0]] * size[1]
+        self.data = [False] * (size ** 2)
         self.done_callback = done_callback
         self.done = False
 
@@ -93,7 +93,6 @@ class RecursiveDivider:
         """
         passage = None
         wall = None
-        # TODO
         if left_side_relative:
             # NOTE: The passage variable can signify the next wall's placement.
             passage = self.random_position(parent.room_start, parent.segment_end)
@@ -102,38 +101,57 @@ class RecursiveDivider:
                                              (passage[0], parent.segment_end[1]),
                                              parent.room_start, (passage[0], parent.room_end[1]))
             else:
-                pass
+                wall = RecursiveDivider.Wall(True, (parent.room_start[0], passage[1]),
+                                             (parent.segment_end[0], passage[1]),
+                                             parent.room_start, (parent.room_end[0], passage[1]))
         else:
             passage = self.random_position(parent.segment_start, parent.room_end)
+            if parent.horizontal:
+                wall = RecursiveDivider.Wall(False, (passage[0], parent.segment_start[1]),
+                                             (passage[0], parent.room_end[1]),
+                                             (passage[0], parent.room_start[1]), parent.room_end)
+            else:
+                wall = RecursiveDivider.Wall(True, (parent.segment_start[0], passage[1]),
+                                             (parent.room_end[0], passage[1]),
+                                             (parent.room_start[0], passage[1]), parent.room_end)
 
         wall.passage = passage
         return wall
 
     async def start(self):
         """Start dividing the maze."""
-        horizontal = self.determine_orientation(self.size)
-        seed_position = self.random_position((0, 0), self.size)
+        horizontal = self.determine_orientation((self.size - 1, self.size - 1))
+        seed_position = self.random_position((0, 0), (self.size - 1, self.size - 1))
         if horizontal:
-            await self.recurse(RecursiveDivider.Wall(True, (0, seed_position[1]), (self.size[0], seed_position[1]),
-                                                     (0, 0), self.size, False))
+            await self.recurse(RecursiveDivider.Wall(True, (0, seed_position[1]), (self.size - 1, seed_position[1]),
+                                                     (0, 0), (self.size - 1, self.size - 1), False))
         else:
-            await self.recurse(RecursiveDivider.Wall(False, (seed_position[0], 0), (seed_position[0], self.size[1]),
-                                                     (0, 0), self.size, False))
+            await self.recurse(RecursiveDivider.Wall(False, (seed_position[0], 0), (seed_position[0], self.size - 1),
+                                                     (0, 0), (self.size - 1, self.size - 1), False))
 
     async def recurse(self, parent: Wall):
         """Recursively divides the maze."""
-        if self.recursion < 1 or parent.length < 4:
+        if self.recursion < 1:
             if not self.done:
                 self.done = True
                 self.done_callback(self)
             return
         self.recursion -= 1
 
-        if parent.horizontal:
+        walls = [
+            self.split_wall(parent, True),
+            self.split_wall(parent, False)
+        ]
 
-            pass
+        if parent.horizontal:
+            for i in range(parent.segment_start[0], parent.segment_end[0] + 1):
+                self.data[parent.segment_start[1] * self.size + i] = i != parent.passage[0]
         else:
-            pass
+            for i in range(parent.segment_start[1], parent.segment_end[1] + 1):
+                self.data[i * self.size + parent.segment_start[0]] = i != parent.passage[1]
+
+        for wall in walls:
+            await self.recurse(wall)
 
 
 class TextBasedAdventure(commands.Cog):
