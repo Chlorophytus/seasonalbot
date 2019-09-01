@@ -12,11 +12,6 @@ class TextBasedAdventure(commands.Cog):
         self.bot = bot
 
     @commands.command()
-    async def ping(self, ctx):
-        """Pong!"""
-        await ctx.send("Pong!")
-
-    @commands.command()
     async def embedpages(self, ctx):
         page1 = discord.Embed(
             title='Page 1/3',
@@ -33,6 +28,16 @@ class TextBasedAdventure(commands.Cog):
             description='Description',
             colour=discord.Colour.orange()
         )
+        inventory = discord.Embed(
+            title='Inventory',
+            description='Description',
+            colour=discord.Colour.red()
+        )
+
+        # Default to None, if not none then the equipped item should show in bold
+        inventory.add_field(name="Keys", value="None", inline=True)
+        inventory.add_field(name="Weapons", value="None", inline=True)
+        inventory.add_field(name="Power-Ups", value="None", inline=True)
 
         pages = [page1, page2, page3]
 
@@ -42,6 +47,7 @@ class TextBasedAdventure(commands.Cog):
         await message.add_reaction('\u25c0')
         await message.add_reaction('\u25b6')
         await message.add_reaction('\u23ed')
+        await message.add_reaction('\U0001F392')
 
         i = 0
         emoji = ''
@@ -61,6 +67,8 @@ class TextBasedAdventure(commands.Cog):
             if emoji == '\u23ed':
                 i = 2
                 await message.edit(embed=pages[i])
+            if emoji == '\U0001F392':
+                await message.edit(embed=inventory)
 
             res = await ctx.bot.wait_for('reaction_add', timeout=30)
             if res is None:
