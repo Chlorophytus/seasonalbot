@@ -37,7 +37,7 @@ class TextBasedAdventure(commands.Cog):
         # Default to None, if not none then the equipped item should show in bold
         inventory.add_field(name="Keys", value="None", inline=True)
         inventory.add_field(name="Weapons", value="None", inline=True)
-        inventory.add_field(name="Power-Ups", value="None", inline=True)
+        inventory.add_field(name="Power-Ups", value="**equipped**, not equipped", inline=True)
 
         pages = [page1, page2, page3]
 
@@ -51,15 +51,25 @@ class TextBasedAdventure(commands.Cog):
 
         i = 0
         emoji = ''
+        status = ''
 
         while True:
             if emoji == '\u23ee':
                 i = 0
                 await message.edit(embed=pages[i])
             if emoji == '\u25c0':
+                # Remove the inventory item emojis first if they are there
+                if status == 'inventory':
+                    await message.clear_reactions()
+                    await message.add_reaction('\u23ee')
+                    await message.add_reaction('\u25c0')
+                    await message.add_reaction('\u25b6')
+                    await message.add_reaction('\u23ed')
+                    await message.add_reaction('\U0001F392')
+                    status = ''
                 if i > 0:
                     i -= 1
-                    await message.edit(embed=pages[i])
+                await message.edit(embed=pages[i])
             if emoji == '\u25b6':
                 if i < 2:
                     i += 1
@@ -68,6 +78,23 @@ class TextBasedAdventure(commands.Cog):
                 i = 2
                 await message.edit(embed=pages[i])
             if emoji == '\U0001F392':
+                # Add the inventory item emojis
+                await message.clear_reactions()
+                status = 'inventory'
+                await message.add_reaction('\u25c0')
+                await message.add_reaction('\U0001F392')
+                await message.add_reaction('\U0001F5E1')
+                await message.add_reaction('\u2604')
+                await message.add_reaction('\U0001F5DD')
+                await message.edit(embed=inventory)
+            if emoji == '\U0001F5E1':
+                # Equip item function
+                await message.edit(embed=inventory)
+            if emoji == '\u2604':
+                # Equip item function
+                await message.edit(embed=inventory)
+            if emoji == '\U0001F5DD':
+                # Equip item function
                 await message.edit(embed=inventory)
 
             res = await ctx.bot.wait_for('reaction_add', timeout=30)
