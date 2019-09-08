@@ -34,10 +34,13 @@ class TextBasedAdventure(commands.Cog):
             colour=discord.Colour.red()
         )
 
+        items = [['default1', 'test'], ['default2'], ['default3']]
+        separator = ', '
+
         # Default to None, if not none then the equipped item should show in bold
-        inventory.add_field(name="Keys", value="None", inline=True)
-        inventory.add_field(name="Weapons", value="None", inline=True)
-        inventory.add_field(name="Power-Ups", value="**equipped**, not equipped", inline=True)
+        inventory.add_field(name="Weapons", value=separator.join(items[0]), inline=True)
+        inventory.add_field(name="Power-Ups", value=separator.join(items[1]), inline=True)
+        inventory.add_field(name="Keys", value=separator.join(items[2]), inline=True)
 
         pages = [page1, page2, page3]
 
@@ -52,6 +55,16 @@ class TextBasedAdventure(commands.Cog):
         i = 0
         emoji = ''
         status = ''
+        x = 0
+
+        def equip(thing, y):
+            # Thing
+            if y > thing.index(thing[-1]):
+                y = 0
+            thing[y] = "**{0}**".format(thing[y])
+            thing[y-1] = thing[y-1].replace('**', '')
+            return y
+            # print(thing[x+1])
 
         while True:
             if emoji == '\u23ee':
@@ -89,12 +102,22 @@ class TextBasedAdventure(commands.Cog):
                 await message.edit(embed=inventory)
             if emoji == '\U0001F5E1':
                 # Equip item function
+                x += 1
+                x = equip(items[0], x)
+                inventory.clear_fields()
+                inventory.add_field(name="Weapons", value=separator.join(items[0]), inline=True)
+                inventory.add_field(name="Power-Ups", value=separator.join(items[1]), inline=True)
+                inventory.add_field(name="Keys", value=separator.join(items[2]), inline=True)
                 await message.edit(embed=inventory)
             if emoji == '\u2604':
                 # Equip item function
+                x += 1
+                x = equip(items[1])
                 await message.edit(embed=inventory)
             if emoji == '\U0001F5DD':
                 # Equip item function
+                x += 1
+                x = equip(items[2])
                 await message.edit(embed=inventory)
 
             res = await ctx.bot.wait_for('reaction_add', timeout=30)
